@@ -9,24 +9,37 @@ import {
 } from './definitions';
 import { formatCurrency } from './utils';
 
+const USE_MOCK_DATA = process.env.USE_MOCK_DATA === 'true';
+// Mock data for fallback
+const mockRevenue = [
+  { month: 'Jan', revenue: 2000 },
+  { month: 'Feb', revenue: 1800 },
+  { month: 'Mar', revenue: 2200 },
+  { month: 'Apr', revenue: 2500 },
+  { month: 'May', revenue: 2300 },
+  { month: 'Jun', revenue: 2100 },
+];
+const mockInvoices = [
+  { amount: 8546, name: 'Amy Burns', image_url: '/customers/amy-burns.png', email: 'amy@example.com', id: '1' },
+  { amount: 500, name: 'Balazs Orban', image_url: '/customers/balazs-orban.png', email: 'balazs@example.com', id: '2' },
+];
+const mockCustomers = [
+  { id: '1', name: 'Amy Burns' },
+  { id: '2', name: 'Balazs Orban' },
+];
+
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
 export async function fetchRevenue() {
+  if (USE_MOCK_DATA) {
+    return mockRevenue;
+  }
   try {
-    // Artificially delay a response for demo purposes.
-    // Don't do this in production :)
-
-    // console.log('Fetching revenue data...');
-    // await new Promise((resolve) => setTimeout(resolve, 3000));
-
     const data = await sql<Revenue[]>`SELECT * FROM revenue`;
-
-    // console.log('Data fetch completed after 3 seconds.');
-
     return data;
   } catch (error) {
     console.error('Database Error:', error);
-    throw new Error('Failed to fetch revenue data.');
+    return mockRevenue;
   }
 }
 
@@ -92,16 +105,15 @@ export async function fetchFilteredInvoices(
 ) {
   const offset = (currentPage - 1) * ITEMS_PER_PAGE;
 
+  if (USE_MOCK_DATA) {
+    return mockInvoices.map((invoice) => ({
+      ...invoice,
+      amount: formatCurrency(invoice.amount),
+    }));
+  }
   try {
     const invoices = await sql<InvoicesTable[]>`
-      SELECT
-        invoices.id,
-        invoices.amount,
-        invoices.date,
-        invoices.status,
-        customers.name,
-        customers.email,
-        customers.image_url
+      SELECT invoices.*, customers.name, customers.image_url, customers.email
       FROM invoices
       JOIN customers ON invoices.customer_id = customers.id
       WHERE
@@ -113,36 +125,19 @@ export async function fetchFilteredInvoices(
       ORDER BY invoices.date DESC
       LIMIT ${ITEMS_PER_PAGE} OFFSET ${offset}
     `;
-
     return invoices;
   } catch (error) {
     console.error('Database Error:', error);
     throw new Error('Failed to fetch invoices.');
   }
-}
-
-export async function fetchInvoicesPages(query: string) {
-  try {
-    const data = await sql`SELECT COUNT(*)
-    FROM invoices
-    JOIN customers ON invoices.customer_id = customers.id
-    WHERE
-      customers.name ILIKE ${`%${query}%`} OR
-      customers.email ILIKE ${`%${query}%`} OR
-      invoices.amount::text ILIKE ${`%${query}%`} OR
-      invoices.date::text ILIKE ${`%${query}%`} OR
-      invoices.status ILIKE ${`%${query}%`}
-  `;
-
-    const totalPages = Math.ceil(Number(data[0].count) / ITEMS_PER_PAGE);
-    return totalPages;
-  } catch (error) {
-    console.error('Database Error:', error);
-    throw new Error('Failed to fetch total number of invoices.');
-  }
+// ...existing code...
 }
 
 export async function fetchInvoiceById(id: string) {
+  if (USE_MOCK_DATA) {
+    const invoice = mockInvoices.find((inv) => inv.id === id);
+    return invoice ? { ...invoice, amount: invoice.amount / 100 } : null;
+  }
   try {
     const data = await sql<InvoiceForm[]>`
       SELECT
@@ -153,21 +148,21 @@ export async function fetchInvoiceById(id: string) {
       FROM invoices
       WHERE invoices.id = ${id};
     `;
-
     const invoice = data.map((invoice) => ({
       ...invoice,
-      // Convert amount from cents to dollars
       amount: invoice.amount / 100,
     }));
-
     return invoice[0];
   } catch (error) {
     console.error('Database Error:', error);
-    throw new Error('Failed to fetch invoice.');
+    return null;
   }
 }
 
 export async function fetchCustomers() {
+  if (USE_MOCK_DATA) {
+    return mockCustomers;
+  }
   try {
     const customers = await sql<CustomerField[]>`
       SELECT
@@ -176,11 +171,10 @@ export async function fetchCustomers() {
       FROM customers
       ORDER BY name ASC
     `;
-
     return customers;
   } catch (err) {
     console.error('Database Error:', err);
-    throw new Error('Failed to fetch all customers.');
+    return mockCustomers;
   }
 }
 
